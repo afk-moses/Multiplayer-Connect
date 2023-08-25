@@ -1,0 +1,399 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Multiplayer CONNECT</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <h1 id = "head">Connect</h1>
+  <form id="room-form" action=>
+    <h1>Join a Room</h1>  
+    <input placeholder="Enter room code" type="text" id="room" name="room" required>
+      <br>
+      <input type="submit" value="Enter" id="submit">
+  </form>
+  <div id = "waiting-div">
+
+  </div>
+  <div id = "main" style="display: none;" >
+    <div class="container">
+        <div id="left-box" class="box left-div grid">
+              
+        </div>
+        <div class="box right-div">
+              <div class="message-frame" id="chatBox">
+
+              </div>
+              <div class="type-message">
+                  <form class="message-form">
+                      <input class="message-in" id="msg">
+                      <button type="submit">Send</button>
+                  </form>
+              </div>
+        </div>
+      </div>
+      <div id = "result">
+
+      </div>
+    </div>
+  <script src="/socket.io/socket.io.js"></script>
+  <script defer>
+    //player no.
+    let player_no = 0;
+    let turn = 1;
+    let room_no;
+    let tiles_used = 0;
+    const game_matrix_tiles_clicked = new Array(36).fill(-1);
+    const socket = io();
+    function bfshelper(matrix,index,visited){
+      //actual bfs
+      let elements = 0;
+      let queue = [];
+      queue.push(index);
+      while (queue.length !== 0){
+        const curr = queue.shift();
+        let row = Math.floor(curr/6);
+        let col = curr%6;
+        let val = matrix[curr];
+        if(visited[curr] !== -1){ 
+          continue;
+        }
+        elements += 1;
+        visited[curr] = 1;
+        if(row+1 <= 5 && matrix[curr+6] === val){
+          queue.push(curr+6);
+        }
+        if(row-1 >= 0 && matrix[curr-6] === val){
+          queue.push(curr-6);
+        }
+        if(col+1 <= 5 && matrix[curr+1] === val){
+          queue.push(curr+1);
+        } 
+        if(col-1 >= 0 && matrix[curr-1] === val){
+          queue.push(curr-1);
+        }
+      }
+      return elements;
+    }
+    function bfs(matrix){
+      let visited = new Array(36).fill(-1);
+      let queue = [];
+      let max_1 = 0;
+      let max_2 = 0;
+      for(let i = 0;i<6;i++){
+        for(let j = 0;j<6;j++){
+          let index = (i*6)+j;
+          let val = visited[index];
+          if(visited[index] !== -1){
+            continue;
+          }
+          if(matrix[index] === 1 && visited[index] == -1){
+            max_1 = Math.max(max_1,bfshelper(matrix,index,visited));
+          }
+          if(matrix[index] === 2 && visited[index] == -1){
+            max_2 =  Math.max(max_2,bfshelper(matrix,index,visited));
+          }
+        }
+      }
+      const result = document.getElementById("result");
+      const h1 = document.createElement("h2");
+      if(player_no === 1){
+        if(max_1 > max_2){
+          console.log(1);
+          h1.innerText = `you won, you scored: ${Math.max(max_1,max_2)} opp scored : ${Math.min(max_1,max_2)}`;
+        }
+        else if(max_1 === max_2){
+          console.log(2);
+          h1.innerText = `Match draw!!!, you both scored: ,${max_1}`;
+        }
+        else{
+          console.log(3);
+          h1.innerText = `you lost, you scored: ${Math.min(max_1,max_2)} opp scored : ${Math.max(max_1,max_2)}`;
+        }
+      }
+      else if(player_no === 2){
+        if(max_1 < max_2){
+          console.log(4);
+          h1.innerText = `you won, you scored: ${Math.max(max_1,max_2)} opp scored : ${Math.min(max_1,max_2)}`;
+        }
+        else if(max_1 === max_2){
+          console.log(5);
+          h1.innerText = `Match draw!!!, you both scored: ,${max_1}`;
+        }
+        else{
+          console.log(6);
+          h1.innerText = `you lost, you scored: ${Math.min(max_1,max_2)} opp scored : ${Math.max(max_1,max_2)}`;
+        }
+      }
+      result.appendChild(h1);
+      const btn = document.createElement('button');
+      btn.textContent = "BACK";
+      result.appendChild(btn);
+      btn.id = "back";
+      const leavebtn = document.getElementById("back");
+      leavebtn.addEventListener("click",()=>{
+          window.location.reload();
+        }) 
+      
+    }
+    socket.on('oppdisconnect',()=>{
+      window.alert("Opponent left");
+      socket.leave(room_no);
+      setTimeout(function() {
+        window.location.reload(); // Reload the page
+      }, 10000)
+    })
+    function handleFormSubmit(event) {
+        event.preventDefault();
+        const roomInput = document.getElementById('room');
+        const room = roomInput.value.trim();
+        if (room !== '') {
+            room_no = room;
+            socket.emit('joinRoom', room);
+        }
+    }
+    document.getElementById('room-form').addEventListener('submit', handleFormSubmit);
+    let curr_room;
+    socket.on('message', (data,sock) => {
+      if(sock !== socket.id){
+        const chatBox = document.getElementById('chatBox');
+        const message = document.createElement('p');
+        message.textContent = `opponent: ${data}`;
+        chatBox.appendChild(message);
+      }
+
+    });
+
+    socket.on('roomjoin-successful', (num) => {
+      window.alert("You have joined successfully",num);
+      if(num == 1){
+        player_no = 1;
+        socket.emit("gamestart-successful",player_no);
+        const form = document.getElementById("room-form");
+        form.style.display = 'none';
+        const wait = document.getElementById("waiting-div");
+        const temp_wait = document.createElement('p');
+        temp_wait.textContent = "Please wait till another player joins the game...";
+        wait.appendChild(temp_wait);
+        const btn = document.createElement('button');
+        btn.textContent = "leave room";
+        wait.appendChild(btn);
+        btn.id = "leavebtn";
+        const leavebtn = document.getElementById("leavebtn");
+        leavebtn.addEventListener("click",()=>{
+            socket.emit("leave-room");
+            wait.innerHTML = '';
+            const form = document.getElementById("room-form");
+            form.style.display = 'block';
+        }) 
+      }
+      if(num == 2){
+        player_no = 2;
+      }
+    });
+
+    socket.on('roomjoin-failed', () => {
+      window.alert("Room already full");  
+    });
+
+    socket.on('turn-used',(played_no,index,bomb_status,closest) => {
+      console.log("index,bomb_status,closest",index,bomb_status,closest);
+      const button_clicked = document.getElementById(`${index}`);
+      const row = Math.floor(index/6);
+      const col = index%6;
+      if(bomb_status === 0){
+        if(played_no === player_no){
+          button_clicked.style.backgroundColor = "green";
+        }else{
+          button_clicked.style.backgroundColor = "red";
+        }
+        button_clicked.innerText = `${closest}`;
+        game_matrix_tiles_clicked[index] = played_no;
+        tiles_used+= 1;
+      }
+      if(bomb_status === 1){
+        button_clicked.style.background = "black";
+        tiles_used++;
+        game_matrix_tiles_clicked[index] === -1
+        if(row-1 >= 0){
+          if(game_matrix_tiles_clicked[index-6] === -1){
+            tiles_used++;
+          }
+          const button_clicked_up = document.getElementById(`${index-6}`);
+          game_matrix_tiles_clicked[index-6] = 3;
+          button_clicked_up.style.backgroundColor = "black"; 
+        }
+        if(row+1 <= 5){
+          if(game_matrix_tiles_clicked[index+6] === -1){
+            tiles_used++;
+          }
+          const button_clicked_down = document.getElementById(`${index+6}`);
+          game_matrix_tiles_clicked[index+6] = 3;
+          button_clicked_down.style.backgroundColor = "black";
+        }
+        if(col-1 >= 0){
+          if(game_matrix_tiles_clicked[index-1] === -1){
+            tiles_used++;
+          }
+          const button_clicked_left = document.getElementById(`${index-1}`);
+          game_matrix_tiles_clicked[index-1] = 3;
+          button_clicked_left.style.backgroundColor = "black";
+        }
+        if(col+1 <= 5){
+          if(game_matrix_tiles_clicked[index+1] === -1){
+            tiles_used++;
+          }
+          const button_clicked_right = document.getElementById(`${index+1}`);
+          game_matrix_tiles_clicked[index+1] = 3;
+          button_clicked_right.style.backgroundColor = "black";
+        }
+      }
+      if(bomb_status === 2){
+        if(played_no === player_no){
+          button_clicked.style.backgroundColor = "green";
+          game_matrix_tiles_clicked[index] = played_no;
+        }else{
+          game_matrix_tiles_clicked[index] = played_no;
+          button_clicked.style.backgroundColor = "red";
+        }
+        tiles_used++;
+        if(row-1 >= 0){
+          if(game_matrix_tiles_clicked[index-6] === -1){
+            tiles_used++;
+          }
+          const button_clicked_up = document.getElementById(`${index-6}`);
+          if(played_no === player_no){
+            button_clicked_up.style.backgroundColor = "green";
+            game_matrix_tiles_clicked[index-6] = played_no;
+          }else{
+            button_clicked_up.style.backgroundColor = "red";
+            game_matrix_tiles_clicked[index-6] = played_no;
+          }
+        }
+        if(row+1 <= 5){
+          if(game_matrix_tiles_clicked[index+6] === -1){
+            tiles_used++;
+          }
+          const button_clicked_down = document.getElementById(`${index+6}`);
+          if(played_no === player_no){
+            button_clicked_down.style.backgroundColor = "green";
+            game_matrix_tiles_clicked[index+6] = played_no;
+          }else{
+            button_clicked_down.style.backgroundColor = "red";
+            game_matrix_tiles_clicked[index+6] = played_no;
+          }
+        }
+        if(col-1 >= 0){
+          if(game_matrix_tiles_clicked[index-1] === -1){
+            tiles_used++;
+          }
+          const button_clicked_left = document.getElementById(`${index-1}`);
+          if(played_no === player_no){
+            button_clicked_left.style.backgroundColor = "green";
+            game_matrix_tiles_clicked[index-1] = played_no;
+          }else{
+            button_clicked_left.style.backgroundColor = "red";
+            game_matrix_tiles_clicked[index-1] = played_no;
+          }
+        }
+        if(col+1 <= 5){
+          if(game_matrix_tiles_clicked[index+1] === -1){
+            tiles_used++;
+          }
+          const button_clicked_right = document.getElementById(`${index+1}`);
+          if(played_no === player_no){
+            button_clicked_right.style.backgroundColor = "green";
+            game_matrix_tiles_clicked[index+1] = played_no;
+          }else{
+            button_clicked_right.style.backgroundColor = "red";
+            game_matrix_tiles_clicked[index+1] = played_no;
+          }
+        }
+      }
+      if(played_no == 1){
+        turn = 2;
+      }
+      if(played_no == 2){
+        turn = 1;
+      }
+      if(tiles_used === 36){
+        socket.emit('game-end-state-initiated');
+      }
+    })
+
+    socket.on('game-end-frontend',() => {
+      // do bfs and announce result
+      console.log("game end call recieved in frontend")
+      console.log(game_matrix_tiles_clicked);
+      bfs(game_matrix_tiles_clicked);
+    });
+
+    socket.on('startgame', () => {
+        window.alert("Game has started")
+        const form = document.getElementById("room-form");
+        form.style.display = 'none';
+        const wait = document.getElementById("waiting-div");
+        wait.innerHTML = '';
+       
+        const final = document.getElementById("main");
+        final.style.display = "block";
+        if(player_no == 2){
+          socket.emit("gamestart-successful",player_no);
+        }
+        
+    });
+
+    function sendmsg(event){
+        event.preventDefault();
+        const send = document.getElementById('msg').value;
+        const chat_Box = document.getElementById('chatBox');
+        const Message = document.createElement('p');
+        Message.textContent = `You: ${send}`;
+        chat_Box.appendChild(Message);
+        socket.emit('chatMessage',(curr_room,send));
+    }
+
+    //add a event listener for tiles and call this function clicktile and pass arguments on it
+
+    //for clicking a tile
+    function clicktile(index){
+        const btn_clicked = document.getElementById(`${index}`);
+        console.log(game_matrix_tiles_clicked);
+        console.log("tile clicked at",index);
+        const row = Math.floor(index/6);
+        const col = index%6;
+        //block clicking a tile;
+        if(player_no != turn){
+          window.alert("wait for ur turn");
+          return;
+        }
+        //stop them clicking an already occupied tile(game_tiles_clicked)
+        if(game_matrix_tiles_clicked[index] !== -1){
+          window.alert("click on a unoccupied tile");
+          return;
+        }
+        socket.emit("tile-clicked",index,player_no);
+    }
+
+    const leftbox = document.getElementById('left-box');
+
+    for (let i = 0; i < 6; i++){
+        for (let j = 0; j < 6; j++){
+            let butt = document.createElement('button');
+            let div = document.createElement('div');
+            div.className = "grid-element";
+            butt.id = `${i*6+j}`;
+            butt.appendChild(div);
+            leftbox.appendChild(butt);
+            butt.style.backgroundColor = "#FFF";
+            butt.addEventListener('click',() => clicktile(i * 6 + j));
+        }
+    }
+
+    var form = document.querySelector('.message-form');
+    
+    form.addEventListener('submit', sendmsg);
+
+  </script>
+</body>
+</html>
